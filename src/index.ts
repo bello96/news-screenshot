@@ -69,13 +69,19 @@ async function handleProxy(url: URL): Promise<Response> {
   }
 
   // Only allow proxying to known CCTV/CNTV domains
-  const allowed = ['cctv.com', 'cntv.cn', 'cctvpic.com', 'cntv.lxdns.com', 'cctv.lxdns.com'];
-  const targetUrl = new URL(target);
-  if (!allowed.some(d => targetUrl.hostname.endsWith(d))) {
-    return new Response('Domain not allowed', { status: 403 });
+  const allowed = ['cctv.com', 'cntv.cn', 'cctvpic.com', 'lxdns.com', 'cdn20.com', 'chinanetcenter.com', 'cntv.cloudcdn.net', 'cntv.myalicdn.com', 'cntv.cdn20.com', 'myqcloud.com', 'cdnpe.com'];
+  let targetFixed = target;
+  // Ensure https
+  if (targetFixed.startsWith('http://')) {
+    targetFixed = 'https://' + targetFixed.slice(7);
+  }
+  const targetUrl = new URL(targetFixed);
+  const hostname = targetUrl.hostname;
+  if (!allowed.some(d => hostname.endsWith(d) || hostname.includes('cntv') || hostname.includes('cctv'))) {
+    return new Response('Domain not allowed: ' + hostname, { status: 403 });
   }
 
-  const resp = await fetch(target, {
+  const resp = await fetch(targetFixed, {
     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
   });
 
