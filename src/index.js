@@ -43,11 +43,9 @@ canvas{display:none}
 <p class="status" id="status"></p>
 <div class="seek-controls" id="seekControls">
   <button onclick="seekBy(-5)">-5s</button>
-  <button onclick="seekBy(-1)">-1s</button>
-  <button onclick="seekBy(-0.04)">-1帧</button>
+  <button onclick="seekBy(-2)">-2s</button>
   <span class="time-display" id="timeDisplay">0.0s</span>
-  <button onclick="seekBy(0.04)">+1帧</button>
-  <button onclick="seekBy(1)">+1s</button>
+  <button onclick="seekBy(2)">+2s</button>
   <button onclick="seekBy(5)">+5s</button>
 </div>
 <div class="result-area">
@@ -142,9 +140,13 @@ async function handleVideoInfo(url) {
     const infoResp = await fetch(`https://vdn.apps.cntv.cn/api/getHttpVideoInfo.do?pid=${guidMatch[1]}`);
     const info = await infoResp.json();
 
+    // Build direct HD m3u8 URL (2000 = highest quality)
+    const hlsBase = info.hls_url || '';
+    const hdUrl = hlsBase.replace(/\/main\/([^/]+)\/(.*?)\/main\.m3u8.*/, '/2000/$1/$2/2000.m3u8');
+
     return json({
       guid: guidMatch[1],
-      hlsUrl: (info.hls_url || '').replace('maxbr=2048', 'maxbr=8192'),
+      hlsUrl: hdUrl,
       title: info.title || '',
       thumbnail: info.video?.chapters?.[0]?.image || '',
     });
