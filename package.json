@@ -1,5 +1,12 @@
 {
   "name": "xinwenlianbo-screenshot",
   "version": "1.0.0",
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "wrangler": "^4.68.0"
+  },
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "preview": "wrangler dev"
+  }
 }
