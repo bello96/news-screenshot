@@ -1,130 +1,4 @@
-export default {
-  async fetch(request: Request): Promise<Response> {
-    const url = new URL(request.url);
-
-    if (url.pathname === '/api/video-info') {
-      return handleVideoInfo(url);
-    }
-    if (url.pathname === '/api/proxy') {
-      return handleProxy(url);
-    }
-    return serveHTML();
-  },
-};
-
-async function handleVideoInfo(url: URL): Promise<Response> {
-  const date = url.searchParams.get('date');
-  if (!date || !/^\d{8}$/.test(date)) {
-    return json({ error: '请提供日期参数，格式：YYYYMMDD' }, 400);
-  }
-
-  try {
-    // Step 1: Fetch day listing page
-    const dayUrl = `https://tv.cctv.com/lm/xwlb/day/${date}.shtml`;
-    const dayResp = await fetch(dayUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-    });
-    if (!dayResp.ok) {
-      return json({ error: `该日期无数据: ${date}` }, 404);
-    }
-    const dayHtml = await dayResp.text();
-
-    // Step 2: Find the complete version video link (first one with sql0 class)
-    const videoLinkMatch = dayHtml.match(/href="(https:\/\/tv\.cctv\.com\/\d{4}\/\d{2}\/\d{2}\/VIDE[^"]+\.shtml)"/);
-    if (!videoLinkMatch) {
-      return json({ error: '未找到该日期的新闻联播视频' }, 404);
-    }
-    const videoPageUrl = videoLinkMatch[1];
-
-    // Step 3: Fetch video page to get GUID
-    const videoResp = await fetch(videoPageUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-    });
-    const videoHtml = await videoResp.text();
-    const guidMatch = videoHtml.match(/var\s+guid\s*=\s*"([a-f0-9]+)"/);
-    if (!guidMatch) {
-      return json({ error: '无法解析视频信息' }, 500);
-    }
-    const guid = guidMatch[1];
-
-    // Step 4: Get video info from CNTV API
-    const infoUrl = `https://vdn.apps.cntv.cn/api/getHttpVideoInfo.do?pid=${guid}`;
-    const infoResp = await fetch(infoUrl);
-    const info: any = await infoResp.json();
-
-    const hlsUrl = info.hls_url || '';
-    const title = info.title || '';
-    const thumbnail = info.video?.chapters?.[0]?.image || '';
-
-    return json({ guid, hlsUrl, title, thumbnail, videoPageUrl });
-  } catch (e: any) {
-    return json({ error: '获取视频信息失败: ' + e.message }, 500);
-  }
-}
-
-async function handleProxy(url: URL): Promise<Response> {
-  const target = url.searchParams.get('url');
-  if (!target) {
-    return new Response('Missing url param', { status: 400 });
-  }
-
-  // Only allow proxying to known CCTV/CNTV domains
-  const allowed = ['cctv.com', 'cntv.cn', 'cctvpic.com', 'lxdns.com', 'cdn20.com', 'chinanetcenter.com', 'cntv.cloudcdn.net', 'cntv.myalicdn.com', 'cntv.cdn20.com', 'myqcloud.com', 'cdnpe.com'];
-  let targetFixed = target;
-  // Ensure https
-  if (targetFixed.startsWith('http://')) {
-    targetFixed = 'https://' + targetFixed.slice(7);
-  }
-  const targetUrl = new URL(targetFixed);
-  const hostname = targetUrl.hostname;
-  if (!allowed.some(d => hostname.endsWith(d) || hostname.includes('cntv') || hostname.includes('cctv'))) {
-    return new Response('Domain not allowed: ' + hostname, { status: 403 });
-  }
-
-  const resp = await fetch(targetFixed, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Referer': 'https://tv.cctv.com/',
-      'Origin': 'https://tv.cctv.com',
-    },
-  });
-
-  if (!resp.ok) {
-    return new Response(`Upstream returned ${resp.status}`, { status: resp.status, headers: { 'Access-Control-Allow-Origin': '*' } });
-  }
-
-  const headers = new Headers();
-  headers.set('Access-Control-Allow-Origin', '*');
-  headers.set('Cache-Control', 'public, max-age=3600');
-
-  // For m3u8 files, rewrite internal URLs to go through proxy
-  const ct = resp.headers.get('content-type') || '';
-  if (targetFixed.includes('.m3u8') || ct.includes('mpegurl')) {
-    let body = await resp.text();
-    // Rewrite all non-comment, non-empty lines (URLs) to go through proxy
-    body = body.replace(/^(?!#)(\S+)$/gm, (match) => {
-      const absUrl = new URL(match, targetFixed).href;
-      return `/api/proxy?url=${encodeURIComponent(absUrl)}`;
-    });
-    headers.set('Content-Type', 'application/vnd.apple.mpegurl');
-    return new Response(body, { status: 200, headers });
-  }
-
-  // For TS segments, pass through with correct content type
-  const respCt = resp.headers.get('content-type');
-  if (respCt) headers.set('Content-Type', respCt);
-  return new Response(resp.body, { status: 200, headers });
-}
-
-function json(data: any, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-  });
-}
-
-function serveHTML(): Response {
-  const html = `<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -276,7 +150,7 @@ const datePicker = document.getElementById('datePicker');
 const fetchBtn = document.getElementById('fetchBtn');
 const captureBtn = document.getElementById('captureBtn');
 const downloadBtn = document.getElementById('downloadBtn');
-const status = document.getElementById('status');
+const statusEl = document.getElementById('status');
 const player = document.getElementById('player');
 const canvas = document.getElementById('canvas');
 const preview = document.getElementById('preview');
@@ -386,20 +260,15 @@ function captureFrame() {
 function downloadImage() {
   const a = document.createElement('a');
   a.href = preview.src;
-  const safeName = currentTitle.replace(/[^\\w\\u4e00-\\u9fff]/g, '_');
+  const safeName = currentTitle.replace(/[^\w\u4e00-\u9fff]/g, '_');
   a.download = safeName + '_封面.png';
   a.click();
 }
 
 function setStatus(msg, isError = false) {
-  status.textContent = msg;
-  status.className = 'status' + (isError ? ' error' : '');
+  statusEl.textContent = msg;
+  statusEl.className = 'status' + (isError ? ' error' : '');
 }
 </script>
 </body>
-</html>`;
-
-  return new Response(html, {
-    headers: { 'Content-Type': 'text/html; charset=utf-8' },
-  });
-}
+</html>
