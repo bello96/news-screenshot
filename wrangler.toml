@@ -1,3 +1,7 @@
 name = "news-screenshot"
 main = "src/index.js"
 compatibility_date = "2024-01-01"
+
+routes = [
+  { pattern = "screenshot.dengjiabei.cn/*", zone_name = "dengjiabei.cn" }
+]
