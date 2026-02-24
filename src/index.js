@@ -42,12 +42,13 @@ canvas{display:none}
 </div>
 <p class="status" id="status"></p>
 <div class="seek-controls" id="seekControls">
+  <button onclick="seekBy(-5)">-5s</button>
   <button onclick="seekBy(-1)">-1s</button>
-  <button onclick="seekBy(-0.1)">-0.1s</button>
+  <button onclick="seekBy(-0.04)">-1帧</button>
   <span class="time-display" id="timeDisplay">0.0s</span>
-  <button onclick="seekBy(0.1)">+0.1s</button>
+  <button onclick="seekBy(0.04)">+1帧</button>
   <button onclick="seekBy(1)">+1s</button>
-  <button onclick="seekTo(0)">回到开头</button>
+  <button onclick="seekBy(5)">+5s</button>
 </div>
 <div class="result-area">
   <video id="player" crossorigin="anonymous" muted></video>
@@ -75,20 +76,21 @@ async function fetchVideo(){
     const proxyUrl='/api/proxy?url='+encodeURIComponent(data.hlsUrl);
     if(hls){hls.destroy()}
     if(Hls.isSupported()){
-      hls=new Hls({maxBufferLength:10,maxMaxBufferLength:15});
+      hls=new Hls({maxBufferLength:30,maxMaxBufferLength:60,autoStartLoad:true,startLevel:-1,capLevelToPlayerSize:false});
       hls.loadSource(proxyUrl);hls.attachMedia(player);
-      hls.on(Hls.Events.MANIFEST_PARSED,()=>{
-        player.style.display='block';player.currentTime=5;player.play().catch(()=>{});
-        setTimeout(()=>{player.pause();player.currentTime=5;
+      hls.on(Hls.Events.MANIFEST_PARSED,(_,data)=>{
+        hls.currentLevel=data.levels.length-1;
+        player.style.display='block';player.currentTime=20;player.play().catch(()=>{});
+        setTimeout(()=>{player.pause();player.currentTime=20;
           setStatus('视频已加载！使用微调按钮找到主播开场画面，然后点击"截取当前画面"');
-          captureBtn.style.display='inline-block';seekControls.style.display='flex';fetchBtn.disabled=false},2000)});
+          captureBtn.style.display='inline-block';seekControls.style.display='flex';fetchBtn.disabled=false},3000)});
       hls.on(Hls.Events.ERROR,(_,d)=>{if(d.fatal){setStatus('视频加载失败: '+d.type,true);fetchBtn.disabled=false}});
     }else if(player.canPlayType('application/vnd.apple.mpegurl')){
       player.src=proxyUrl;
       player.addEventListener('loadedmetadata',()=>{
-        player.style.display='block';player.currentTime=5;
+        player.style.display='block';player.currentTime=20;
         setTimeout(()=>{player.pause();setStatus('视频已加载！使用微调按钮找到主播开场画面，然后点击"截取当前画面"');
-          captureBtn.style.display='inline-block';seekControls.style.display='flex';fetchBtn.disabled=false},2000)},{once:true});
+          captureBtn.style.display='inline-block';seekControls.style.display='flex';fetchBtn.disabled=false},3000)},{once:true});
       player.play().catch(()=>{})}}
   catch(e){setStatus('请求失败: '+e.message,true);fetchBtn.disabled=false}}
 function seekBy(d){player.currentTime=Math.max(0,player.currentTime+d)}
@@ -142,7 +144,7 @@ async function handleVideoInfo(url) {
 
     return json({
       guid: guidMatch[1],
-      hlsUrl: info.hls_url || '',
+      hlsUrl: (info.hls_url || '').replace('maxbr=2048', 'maxbr=8192'),
       title: info.title || '',
       thumbnail: info.video?.chapters?.[0]?.image || '',
     });
