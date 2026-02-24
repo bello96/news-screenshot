@@ -82,32 +82,38 @@ async function handleProxy(url: URL): Promise<Response> {
   }
 
   const resp = await fetch(targetFixed, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Referer': 'https://tv.cctv.com/',
+      'Origin': 'https://tv.cctv.com',
+    },
   });
 
-  const headers = new Headers(resp.headers);
+  if (!resp.ok) {
+    return new Response(`Upstream returned ${resp.status}`, { status: resp.status, headers: { 'Access-Control-Allow-Origin': '*' } });
+  }
+
+  const headers = new Headers();
   headers.set('Access-Control-Allow-Origin', '*');
-  headers.delete('content-security-policy');
+  headers.set('Cache-Control', 'public, max-age=3600');
 
   // For m3u8 files, rewrite internal URLs to go through proxy
   const ct = resp.headers.get('content-type') || '';
-  if (target.includes('.m3u8') || ct.includes('mpegurl') || ct.includes('text/plain')) {
+  if (targetFixed.includes('.m3u8') || ct.includes('mpegurl')) {
     let body = await resp.text();
-    // Rewrite relative URLs in m3u8
-    const baseUrl = target.substring(0, target.lastIndexOf('/') + 1);
-    body = body.replace(/^(?!#)(.+\.ts.*)$/gm, (match) => {
-      const absUrl = match.startsWith('http') ? match : baseUrl + match;
-      return `/api/proxy?url=${encodeURIComponent(absUrl)}`;
-    });
-    body = body.replace(/^(?!#)(.+\.m3u8.*)$/gm, (match) => {
-      const absUrl = match.startsWith('http') ? match : baseUrl + match;
+    // Rewrite all non-comment, non-empty lines (URLs) to go through proxy
+    body = body.replace(/^(?!#)(\S+)$/gm, (match) => {
+      const absUrl = new URL(match, targetFixed).href;
       return `/api/proxy?url=${encodeURIComponent(absUrl)}`;
     });
     headers.set('Content-Type', 'application/vnd.apple.mpegurl');
-    return new Response(body, { status: resp.status, headers });
+    return new Response(body, { status: 200, headers });
   }
 
-  return new Response(resp.body, { status: resp.status, headers });
+  // For TS segments, pass through with correct content type
+  const respCt = resp.headers.get('content-type');
+  if (respCt) headers.set('Content-Type', respCt);
+  return new Response(resp.body, { status: 200, headers });
 }
 
 function json(data: any, status = 200): Response {
